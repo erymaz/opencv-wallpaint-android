@@ -2,12 +2,15 @@ package com.test.wallpaint
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
+import android.content.DialogInterface
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.*
 import android.net.Uri
+import android.os.AsyncTask
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -28,7 +31,9 @@ import android.util.DisplayMetrics
 import android.view.Menu
 import android.view.MenuItem
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
 import androidx.core.graphics.drawable.toBitmap
 import com.test.wallpaint.databinding.ActivityMainBinding
@@ -76,7 +81,7 @@ class MainActivity : AppCompatActivity() {
 
         tl = Point()
 
-        // openCamera()
+        openGallery()
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -134,11 +139,7 @@ class MainActivity : AppCompatActivity() {
                     if (touchCount == 0) {
                         tl.x = event.x.toDouble()
                         tl.y = event.y.toDouble()
-                        if(texture) {
-                            applyTexture(bitmap, tl)
-                        } else {
-                            rpPaintHSV(bitmap,tl)
-                        }
+                        ProgressTask(binding.progressBar, bitmap, tl, this@MainActivity).execute()
                     }
                 }
 
@@ -238,7 +239,9 @@ class MainActivity : AppCompatActivity() {
         val imageUrl = data?.data
         bitmap = getCapturedImage(imageUrl!!)
         bitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-        // bitmap = getResizedBitmap(bitmap,bitmap.width/5,bitmap.height/5)
+        if(bitmap.width > 1000 || bitmap.height > 1000) {
+            bitmap = getResizedBitmap(bitmap, bitmap.width / 5, bitmap.height / 5)
+        }
         showImage()
     }
 
@@ -248,7 +251,7 @@ class MainActivity : AppCompatActivity() {
 
         // show intermediate step results
         // grid created here to do that
-        showResultLayouts()
+        // showResultLayouts()
 
         val mRgbMat = Mat()
         Utils.bitmapToMat(bitmap, mRgbMat)
@@ -346,8 +349,9 @@ class MainActivity : AppCompatActivity() {
     private fun showImage(image: Mat, view: ImageView) {
         val mBitmap = Bitmap.createBitmap(image.cols(), image.rows(), Bitmap.Config.ARGB_8888);
         Utils.matToBitmap(image, mBitmap)
-        view.setImageBitmap(mBitmap)
-
+        runOnUiThread {
+            view.setImageBitmap(mBitmap)
+        }
         bitmap = mBitmap
         saveImage(bitmap)
     }
@@ -384,6 +388,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onOk(dialog: AmbilWarnaDialog ,color: Int) {
                 chosenColor = color
+                showMessage(this@MainActivity, "Alert", "Please touch the position of the wall to apply color.", "Ok", null)
             }
         })
 
@@ -392,6 +397,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun chooseTexture() {
         texture = true
+        showMessage(this@MainActivity, "Alert", "Please touch the position of the wall to apply texture.", "Ok", null)
     }
 
     fun getResizedBitmap(bm: Bitmap, newWidth: Int, newHeight: Int): Bitmap {
@@ -424,7 +430,7 @@ class MainActivity : AppCompatActivity() {
 
         // show intermediate step results
         // grid created here to do that
-        showResultLayouts()
+        // showResultLayouts()
 
         val mRgbMat = Mat()
         Utils.bitmapToMat(bitmap, mRgbMat)
@@ -545,6 +551,53 @@ class MainActivity : AppCompatActivity() {
         Core.addWeighted(result,0.8, img,0.2 ,0.0,result )
 
         showImage(result, binding.outputImage)
+    }
+
+    fun showMessage(context: Context, title: String, msg: String,
+                   positiveBtnText: String,
+                   positiveBtnClickListener: DialogInterface.OnClickListener?): AlertDialog {
+        val builder = AlertDialog.Builder(context)
+            .setTitle(title)
+            .setMessage(msg)
+            .setCancelable(true)
+            .setPositiveButton(positiveBtnText, positiveBtnClickListener)
+        val alert = builder.create()
+        alert.show()
+        return alert
+    }
+
+    // AsyncTask inner class
+    internal class ProgressTask(
+        var progress: ProgressBar,
+        var bitmap: Bitmap,
+        var point: Point,
+        var context: MainActivity
+    ) : AsyncTask<Void, Int, Int>() {
+        override fun onPreExecute() {
+            super.onPreExecute()
+            progress.visibility = View.VISIBLE
+        }
+
+        override fun onProgressUpdate(vararg values: Int?) {
+            super.onProgressUpdate(*values)
+        }
+
+        override fun doInBackground(vararg params: Void?): Int? {
+            if(context.texture) {
+                context.applyTexture(bitmap, point)
+            } else {
+                context.rpPaintHSV(bitmap,point)
+            }
+            context.runOnUiThread {
+                context.showImage()
+            }
+            return null
+        }
+
+        override fun onPostExecute(result: Int?) {
+            super.onPostExecute(result)
+            progress.visibility = View.INVISIBLE
+        }
     }
 
 }
